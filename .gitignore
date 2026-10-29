@@ -1,0 +1,18 @@
+
+# Node.js dependencies
+node_modules/
+
+# Generated engraving outputs
+out/
+
+# macOS
+.DS_Store
+
+# PyCharm
+.idea/
+
+# Python artifacts (for future development)
+__pycache__/
+*.pyc
+.venv/
+
