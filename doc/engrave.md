@@ -13,7 +13,7 @@ The script is part of the `music-compose` project and provides the engraving fou
 
 ```text
 music-compose/
-├── js/
+├── scripts/
 │   └── engrave.js
 ├── doc/
 │   └── engrave.md
@@ -32,7 +32,7 @@ The `out/` directory is created automatically if it does not exist.
 From the project root:
 
 ```bash
-node js/engrave.js amazing-grace.abc
+node scripts/engrave.js amazing-grace.abc
 ```
 
 The script accepts a single command-line argument specifying the input ABC file.
