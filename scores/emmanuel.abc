@@ -1,0 +1,112 @@
+X:1
+T:O Come, O Come, Emmanuel
+M:4/4
+L:1/4
+K:Em
+
+% ==========================================
+% VERSE
+% ==========================================
+
+% M0 - Pickup
+m: E |
+w: O
+
+% M1
+m: G B B B |
+w: come, O come, Em-
+h: Em
+
+% M2
+m: A c B A |
+w: man _ _ nu-
+h: Am
+
+% M3
+m: G3 A |
+w: el, and
+h: Em Am
+
+% M4
+m: B G E G |
+w: ran- som cap- tive
+h: G Em
+
+% M5
+m: A F E D |
+w: Is _ _ ra-
+h: Am
+
+% M6
+m: E3 A |
+w: el, that
+h: Em
+
+% M7
+m: A E E F |
+w: mourns in lone- ly
+h: Am
+
+% M8
+m: G2 F E |
+w: ex _ ile
+h: Em Bm
+
+% M9
+m: D3 G |
+w: here, un-
+h: D G
+
+% M10
+m: A B B B |
+w: til the son of
+h: Am Em
+
+% M11
+m: A c B A |
+w: God _ _ ap-
+h: Am
+
+% M12
+m: G3 d |
+w: pear; Re-
+h: Em
+
+% ==========================================
+% REFRAIN
+% ==========================================
+
+% M13
+m: d3 B |
+w: joice, Re-
+h: G
+
+% M14
+m: B3 B |
+w: joice! Em-
+h: Em
+
+% M15
+m: A c B A |
+w: man _ _ nu-
+h: Am
+
+% M16
+m: G3 A |
+w: el, shall
+h: Em Am
+
+% M17
+m: B G E G |
+w: come to you, O
+h: G Em
+
+% M18
+m: A F E D |
+w: Is _ _ ra-
+h: Am
+
+% M19
+m: E3  E |]
+w: el, O
+h: Em
