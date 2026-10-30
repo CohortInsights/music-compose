@@ -4,12 +4,14 @@ M:4/4
 L:1/4
 K:Em
 
+#include "patterns-4-4.abc"
+
 % ==========================================
 % VERSE
 % ==========================================
 
-% M0 - Pickup
-m: E |
+% M0
+m: z3 E |
 w: O
 
 % M1
@@ -110,3 +112,47 @@ h: Am
 m: E3  E |]
 w: el, O
 h: Em
+
+% RIGHT HAND MELODY
+rh:
+  transpose:
+    part: melody
+    shift: 0
+
+% LEFT HAND
+% M0
+pattern: Arp
+lh: E4
+% M1
+lh: E4
+lh: A4
+pattern: Bass-Blk
+lh: E2 A2
+lh: G2 E2
+% M5
+pattern: Arp
+lh: A4
+lh: E4
+pattern: Bass-Blk
+lh: A4
+lh: E2 B2
+% M9
+pattern: Arp
+lh: D2 G2
+lh: A2 E2
+pattern: Bass-Blk
+lh: A4
+lh: E4
+% M13
+pattern: Bass-5-Octave
+lh: G4
+lh: E4
+pattern: Arp
+lh: A4
+lh: E2 A2
+% M17
+lh: G2 E2
+lh: A4
+lh: E4
+
+
