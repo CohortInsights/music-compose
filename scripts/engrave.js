@@ -9,11 +9,14 @@ const fs = require('fs');
 const path = require('path');
 const { Abc } = require('abc2svg/abc2svg-1');
 
-// Project root is the parent of the js directory.
+const SYSTEM_GAP = 40;
+const showFootprint = process.argv.includes('--show-footprint');
+
+// Project root is the parent of the scripts directory.
 const projectRoot = path.resolve(__dirname, '..');
 
 if (!process.argv[2]) {
-  console.error('Usage: node js/engrave.js <file.abc>');
+  console.error('Usage: node scripts/engrave.js <file.abc>');
   process.exit(1);
 }
 
@@ -58,7 +61,7 @@ const user = {
       source_end: stop,
       abc: source.slice(start, stop),
 
-      // Original annotation coordinates
+      // Original annotation rectangle from abc2svg.
       x_annotation: x,
       y_annotation: y,
       width: w,
@@ -101,17 +104,26 @@ if (pending.length) {
   );
 }
 
+if (!events.length) {
+  throw new Error(
+    'No note annotations produced. ' +
+    'Check that the ABC contains music and that ' +
+    'the tune is not terminated prematurely.'
+  );
+}
+
 // ------------------------------------------------------------
 // 2. Parse and stack SVG fragments
 //
-// This section preserves the original working
-// engrave-consolidated.js combination behavior.
+// Preserve the original SVG root class so that abc2svg's
+// font assignments are retained.
 // ------------------------------------------------------------
 
 let width = 0;
 let totalHeight = 0;
 
 let definitions = '';
+let rootClass = '';
 
 const groups = [];
 const systems = [];
@@ -143,10 +155,22 @@ chunks.forEach((svg, system) => {
     .replace(/^[\s\S]*?<svg\b[^>]*>/, '')
     .replace(/<\/svg>[\s\S]*$/, '');
 
-  // IMPORTANT:
   // Preserve only the first fragment's definitions.
-  // This is how our original working script operated.
   if (system === 0) {
+
+    // Capture the root class assigned by abc2svg.
+    const rootTag = svg.match(/<svg\b[^>]*>/);
+
+    if (!rootTag) {
+      throw new Error('Missing SVG root element');
+    }
+
+    const classMatch = rootTag[0].match(
+      /\bclass=["']([^"']+)["']/
+    );
+
+    rootClass = classMatch ? classMatch[1] : 'tune0';
+
     const styles = body.match(
       /<style\b[^>]*>[\s\S]*?<\/style>/g
     ) || [];
@@ -163,14 +187,18 @@ chunks.forEach((svg, system) => {
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, '')
     .replace(/<defs\b[^>]*>[\s\S]*?<\/defs>/g, '');
 
+  // Add a gap before every system except the first.
+  if (system > 0) {
+    totalHeight += SYSTEM_GAP;
+  }
+
   const yOffset = totalHeight;
 
   systems.push({
     system,
     width: w,
     height: h,
-    y_offset: yOffset,
-    body
+    y_offset: yOffset
   });
 
   groups.push(
@@ -180,130 +208,58 @@ chunks.forEach((svg, system) => {
     '\n</g>'
   );
 
+  // Advance to the bottom of the current system.
   totalHeight += h;
 });
 
 // ------------------------------------------------------------
-// 3. Extract rendered notehead coordinates
+// 3. Convert annotation rectangles to combined SVG coordinates
 //
-// Uses the same glyph-matching approach verified
-// in calibrate-events.js.
+// No notehead extraction or matching is required.
 // ------------------------------------------------------------
 
-// abc2svg notehead glyphs for our test score.
-const NOTEHEADS = new Set([
-  '\uE0A4',
-  '\uE0A3'
-]);
+for (const event of events) {
+  const system = systems[event.system];
 
-function getAttribute(attrs, name) {
-  const match = attrs.match(
-    new RegExp(`\\b${name}=["']([^"']*)["']`)
-  );
-
-  return match ? match[1] : null;
-}
-
-function extractNoteheads(system) {
-  const positions = [];
-
-  const textRegex =
-    /<text\b([^>]*)>([\s\S]*?)<\/text>/g;
-
-  let match;
-
-  while (
-    (match = textRegex.exec(system.body)) !== null
-  ) {
-    const attrs = match[1];
-    const content = match[2];
-
-    const xValue = getAttribute(attrs, 'x');
-    const yValue = getAttribute(attrs, 'y');
-
-    if (xValue === null || yValue === null) {
-      continue;
-    }
-
-    const xs = xValue.split(',').map(Number);
-    const ys = yValue.split(',').map(Number);
-
-    const chars = Array.from(
-      content.replace(/\s+/g, '')
-    );
-
-    // Ignore text that is not a positioned
-    // musical glyph sequence.
-    if (
-      xs.length !== chars.length ||
-      ys.length !== chars.length
-    ) {
-      continue;
-    }
-
-    for (let i = 0; i < chars.length; i++) {
-      if (!NOTEHEADS.has(chars[i])) {
-        continue;
-      }
-
-      if (
-        !Number.isFinite(xs[i]) ||
-        !Number.isFinite(ys[i])
-      ) {
-        throw new Error(
-          `Invalid notehead coordinate in ` +
-          `system ${system.system}`
-        );
-      }
-
-      positions.push({
-        x: xs[i],
-        y: ys[i] + system.y_offset
-      });
-    }
-  }
-
-  // Match noteheads in left-to-right order.
-  positions.sort((a, b) => a.x - b.x);
-
-  return positions;
-}
-
-// ------------------------------------------------------------
-// 4. Calibrate annotation coordinates
-// ------------------------------------------------------------
-
-for (const system of systems) {
-  const noteheads = extractNoteheads(system);
-
-  const systemEvents = events.filter(
-    event => event.system === system.system
-  );
-
-  console.log(
-    `System ${system.system}: ` +
-    `${systemEvents.length} events, ` +
-    `${noteheads.length} rendered noteheads`
-  );
-
-  if (systemEvents.length !== noteheads.length) {
+  if (!system) {
     throw new Error(
-      `Note count mismatch in system ${system.system}: ` +
-      `${systemEvents.length} annotations vs. ` +
-      `${noteheads.length} rendered noteheads`
+      `Invalid system for annotation at ` +
+      `source offset ${event.source_start}`
     );
   }
 
-  systemEvents.forEach((event, i) => {
-    const position = noteheads[i];
+  const values = [
+    event.x_annotation,
+    event.y_annotation,
+    event.width,
+    event.height
+  ];
 
-    // Final calibrated coordinates in the
-    // combined SVG coordinate system.
-    event.x = position.x;
-    event.y = position.y;
+  if (!values.every(Number.isFinite)) {
+    throw new Error(
+      `Invalid annotation rectangle at ` +
+      `source offset ${event.source_start}`
+    );
+  }
 
-    event.system_y_offset = system.y_offset;
-  });
+  if (event.width < 0 || event.height < 0) {
+    throw new Error(
+      `Negative annotation dimensions at ` +
+      `source offset ${event.source_start}`
+    );
+  }
+
+  event.x = event.x_annotation;
+  event.y = event.y_annotation + system.y_offset;
+
+  event.system_y_offset = system.y_offset;
+
+  event.bbox = {
+    x: event.x,
+    y: event.y,
+    width: event.width,
+    height: event.height
+  };
 }
 
 // Preserve ABC source ordering.
@@ -312,26 +268,46 @@ events.sort(
 );
 
 // ------------------------------------------------------------
-// 5. Generate combined SVG
-//
-// Keep the same root attributes as the original
-// working engrave-consolidated.js.
+// Optional diagnostic overlay: note annotation footprints
+// ------------------------------------------------------------
+
+const footprintOverlay = showFootprint
+  ? `<g id="note-footprints"
+       fill="none"
+       stroke="red"
+       stroke-width="0.8"
+       pointer-events="none">
+${events.map(event => `
+  <rect
+    x="${event.bbox.x}"
+    y="${event.bbox.y}"
+    width="${event.bbox.width}"
+    height="${event.bbox.height}"
+  />`).join('\n')}
+</g>`
+  : '';
+
+// ------------------------------------------------------------
+// 4. Generate combined SVG
 // ------------------------------------------------------------
 
 const output = `<svg xmlns="http://www.w3.org/2000/svg"
  xmlns:xlink="http://www.w3.org/1999/xlink"
  viewBox="0 0 ${width} ${totalHeight}"
  width="${width}px" height="${totalHeight}px"
- fill="currentColor" stroke-width=".7" class="f1 tune0">
+ fill="currentColor" stroke-width=".7" class="${rootClass}">
+ 
 ${definitions}
 ${groups.join('\n')}
-</svg>\n`;
+${footprintOverlay}
+
+</svg>
+`;
 
 // ------------------------------------------------------------
-// 6. Write outputs
+// 5. Write outputs
 // ------------------------------------------------------------
 
-// Write only after every system passes calibration.
 fs.writeFileSync(
   outputSvg,
   output,
@@ -362,4 +338,3 @@ console.table(
     y_offset: s.y_offset
   }))
 );
-

@@ -3,156 +3,24 @@ T:O Come, O Come, Emmanuel
 M:4/4
 L:1/4
 K:Em
-
-#include "patterns-4-4.abc"
-
-% ==========================================
-% VERSE
-% ==========================================
-
-% M0
-m: z3 E |
-w: O
-
-% M1
-m: G B B B |
-w: come, O come, Em-
-h: Em
-
-% M2
-m: A c B A |
-w: man _ _ nu-
-h: Am
-
-% M3
-m: G3 A |
-w: el, and
-h: Em Am
-
-% M4
-m: B G E G |
-w: ran- som cap- tive
-h: G Em
-
-% M5
-m: A F E D |
-w: Is _ _ ra-
-h: Am
-
-% M6
-m: E3 A |
-w: el, that
-h: Em
-
-% M7
-m: A E E F |
-w: mourns in lone- ly
-h: Am
-
-% M8
-m: G2 F E |
-w: ex _ ile
-h: Em Bm
-
-% M9
-m: D3 G |
-w: here, un-
-h: D G
-
-% M10
-m: A B B B |
-w: til the son of
-h: Am Em
-
-% M11
-m: A c B A |
-w: God _ _ ap-
-h: Am
-
-% M12
-m: G3 d |
-w: pear; Re-
-h: Em
-
-% ==========================================
-% REFRAIN
-% ==========================================
-
-% M13
-m: d3 B |
-w: joice, Re-
-h: G
-
-% M14
-m: B3 B |
-w: joice! Em-
-h: Em
-
-% M15
-m: A c B A |
-w: man _ _ nu-
-h: Am
-
-% M16
-m: G3 A |
-w: el, shall
-h: Em Am
-
-% M17
-m: B G E G |
-w: come to you, O
-h: G Em
-
-% M18
-m: A F E D |
-w: Is _ _ ra-
-h: Am
-
-% M19
-m: E3  E |]
-w: el, O
-h: Em
-
-% RIGHT HAND MELODY
-rh:
-  transpose:
-    part: melody
-    shift: 0
-
-% LEFT HAND
-% M0
-pattern: Arp
-lh: E4
-% M1
-lh: E4
-lh: A4
-pattern: Bass-Blk
-lh: E2 A2
-lh: G2 E2
-% M5
-pattern: Arp
-lh: A4
-lh: E4
-pattern: Bass-Blk
-lh: A4
-lh: E2 B2
-% M9
-pattern: Arp
-lh: D2 G2
-lh: A2 E2
-pattern: Bass-Blk
-lh: A4
-lh: E4
-% M13
-pattern: Bass-5-Octave
-lh: G4
-lh: E4
-pattern: Arp
-lh: A4
-lh: E2 A2
-% M17
-lh: G2 E2
-lh: A4
-lh: E4
-
-
+%
+% VERSE — Measures 0–3
+z3 E | "Em"G B B B       | "Am"A c B A | "Em"G3 "Am"A |
+w: O | come, O come, Em- | man _ _ nu- | el, and
+%
+% Measures 4–7
+"G"B G "Em"E G        | "Am"A F E D | "Em"E3 A | "Am"A E E F |
+w: ran- som cap- tive | Is _ _ ra-  | el, that | mourns in lone- ly
+%
+% Measures 8–11
+"Em"G2 "Bm"F E | "D"D3 "G"G | "Am"A B "Em"B B | "Am"A c B A |
+w: ex _ ile    | here, un-  | til the son of  | God _ _ ap-
+%
+% Measures 12–15 (verse into refrain)
+"Em"G3 d     | "G"d3 B    | "Em"B3 B   | "Am"A c B A |
+w: pear; Re- | joice, Re- | joice! Em- | man _ _ nu-
+%
+% Measures 16–19
+"Em"G3 "Am"A | "G"B G "Em"E G | "Am"A F E D | "Em"E4 |
+w: el, shall | come to you, O | Is _ _ ra-  | el
+%
