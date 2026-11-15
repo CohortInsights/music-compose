@@ -1,34 +1,25 @@
 
 'use strict';
 
-// ------------------------------------------------------------
-// Configuration
-// ------------------------------------------------------------
-
 const fs = require('fs');
 const path = require('path');
 const { Abc } = require('abc2svg/abc2svg-1');
+const coordinates = require('./svg-coordinates');
 
-const SYSTEM_GAP = 40;
 const showFootprint = process.argv.includes('--show-footprint');
-
-// Project root is the parent of the scripts directory.
 const projectRoot = path.resolve(__dirname, '..');
 
 if (!process.argv[2]) {
-  console.error('Usage: node scripts/engrave.js <file.abc>');
+  console.error('Usage: node scripts/engrave.js <file.abc> [--show-footprint]');
   process.exit(1);
 }
 
-// Resolve input relative to the current working directory.
 const input = path.resolve(process.argv[2]);
-
 if (path.extname(input).toLowerCase() !== '.abc') {
   throw new Error('Input file must have an .abc extension');
 }
 
 const source = fs.readFileSync(input, 'utf8');
-
 const baseName = path.basename(input, '.abc');
 const outputDir = path.join(projectRoot, 'out');
 
@@ -46,6 +37,7 @@ const events = [];
 const errors = [];
 
 let pending = [];
+let abc;
 
 const user = {
   read_file: () => null,
@@ -61,11 +53,16 @@ const user = {
       source_end: stop,
       abc: source.slice(start, stop),
 
-      // Original annotation rectangle from abc2svg.
+      // Original abc2svg annotation rectangle.
       x_annotation: x,
       y_annotation: y,
       width: w,
-      height: h
+      height: h,
+
+      // Convert before abc2svg changes its drawing state.
+      fragment_bbox: coordinates.annotationToSvg(
+        abc, x, y, w, h
+      )
     };
 
     events.push(event);
@@ -85,7 +82,8 @@ const user = {
   }
 };
 
-new Abc(user).tosvg(input, source);
+abc = new Abc(user);
+abc.tosvg(input, source);
 
 if (errors.length) {
   throw new Error(
@@ -113,58 +111,42 @@ if (!events.length) {
 }
 
 // ------------------------------------------------------------
-// 2. Parse and stack SVG fragments
-//
-// Preserve the original SVG root class so that abc2svg's
-// font assignments are retained.
+// 2. Calculate system layout and event coordinates
 // ------------------------------------------------------------
 
-let width = 0;
-let totalHeight = 0;
+const { systems, width, totalHeight } =
+  coordinates.layoutSystems(chunks);
+
+coordinates.placeEvents(events, systems);
+
+// Preserve ABC source ordering.
+events.sort(
+  (a, b) => a.source_start - b.source_start
+);
+
+// ------------------------------------------------------------
+// 3. Assemble SVG fragments
+// ------------------------------------------------------------
 
 let definitions = '';
 let rootClass = '';
 
 const groups = [];
-const systems = [];
 
 chunks.forEach((svg, system) => {
-  const match = svg.match(
-    /viewBox=["']\s*0\s+0\s+([\d.]+)\s+([\d.]+)["']/
-  );
+  const rootTag = svg.match(/<svg\b[^>]*>/);
 
-  if (!match) {
+  if (!rootTag) {
     throw new Error(
-      `Missing or unsupported viewBox in ` +
-      `SVG fragment ${system + 1}`
+      `Missing SVG root element in fragment ${system + 1}`
     );
   }
-
-  const w = Number(match[1]);
-  const h = Number(match[2]);
-
-  if (!(w > 0 && h > 0)) {
-    throw new Error(
-      `Invalid dimensions in SVG fragment ${system + 1}`
-    );
-  }
-
-  width = Math.max(width, w);
 
   let body = svg
     .replace(/^[\s\S]*?<svg\b[^>]*>/, '')
     .replace(/<\/svg>[\s\S]*$/, '');
 
-  // Preserve only the first fragment's definitions.
   if (system === 0) {
-
-    // Capture the root class assigned by abc2svg.
-    const rootTag = svg.match(/<svg\b[^>]*>/);
-
-    if (!rootTag) {
-      throw new Error('Missing SVG root element');
-    }
-
     const classMatch = rootTag[0].match(
       /\bclass=["']([^"']+)["']/
     );
@@ -182,113 +164,29 @@ chunks.forEach((svg, system) => {
     definitions = [...styles, ...defs].join('\n');
   }
 
-  // Remove definitions from each system body.
+  // Definitions belong only in the combined SVG root.
   body = body
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, '')
     .replace(/<defs\b[^>]*>[\s\S]*?<\/defs>/g, '');
 
-  // Add a gap before every system except the first.
-  if (system > 0) {
-    totalHeight += SYSTEM_GAP;
-  }
-
-  const yOffset = totalHeight;
-
-  systems.push({
-    system,
-    width: w,
-    height: h,
-    y_offset: yOffset
-  });
-
   groups.push(
     `<g data-system="${system}" ` +
-    `transform="translate(0, ${yOffset})">\n` +
+    `transform="translate(0, ${systems[system].y_offset})">\n` +
     body +
     '\n</g>'
   );
-
-  // Advance to the bottom of the current system.
-  totalHeight += h;
 });
 
 // ------------------------------------------------------------
-// 3. Convert annotation rectangles to combined SVG coordinates
-//
-// No notehead extraction or matching is required.
+// 4. Optional diagnostic footprint overlay
 // ------------------------------------------------------------
 
-for (const event of events) {
-  const system = systems[event.system];
-
-  if (!system) {
-    throw new Error(
-      `Invalid system for annotation at ` +
-      `source offset ${event.source_start}`
-    );
-  }
-
-  const values = [
-    event.x_annotation,
-    event.y_annotation,
-    event.width,
-    event.height
-  ];
-
-  if (!values.every(Number.isFinite)) {
-    throw new Error(
-      `Invalid annotation rectangle at ` +
-      `source offset ${event.source_start}`
-    );
-  }
-
-  if (event.width < 0 || event.height < 0) {
-    throw new Error(
-      `Negative annotation dimensions at ` +
-      `source offset ${event.source_start}`
-    );
-  }
-
-  event.x = event.x_annotation;
-  event.y = event.y_annotation + system.y_offset;
-
-  event.system_y_offset = system.y_offset;
-
-  event.bbox = {
-    x: event.x,
-    y: event.y,
-    width: event.width,
-    height: event.height
-  };
-}
-
-// Preserve ABC source ordering.
-events.sort(
-  (a, b) => a.source_start - b.source_start
-);
-
-// ------------------------------------------------------------
-// Optional diagnostic overlay: note annotation footprints
-// ------------------------------------------------------------
-
-const footprintOverlay = showFootprint
-  ? `<g id="note-footprints"
-       fill="none"
-       stroke="red"
-       stroke-width="0.8"
-       pointer-events="none">
-${events.map(event => `
-  <rect
-    x="${event.bbox.x}"
-    y="${event.bbox.y}"
-    width="${event.bbox.width}"
-    height="${event.bbox.height}"
-  />`).join('\n')}
-</g>`
+const overlay = showFootprint
+  ? coordinates.footprintOverlay(events)
   : '';
 
 // ------------------------------------------------------------
-// 4. Generate combined SVG
+// 5. Generate combined SVG
 // ------------------------------------------------------------
 
 const output = `<svg xmlns="http://www.w3.org/2000/svg"
@@ -296,16 +194,13 @@ const output = `<svg xmlns="http://www.w3.org/2000/svg"
  viewBox="0 0 ${width} ${totalHeight}"
  width="${width}px" height="${totalHeight}px"
  fill="currentColor" stroke-width=".7" class="${rootClass}">
- 
 ${definitions}
 ${groups.join('\n')}
-${footprintOverlay}
-
-</svg>
-`;
+${overlay}
+</svg>`;
 
 // ------------------------------------------------------------
-// 5. Write outputs
+// 6. Write outputs
 // ------------------------------------------------------------
 
 fs.writeFileSync(
@@ -326,8 +221,7 @@ console.log(
 
 console.log(
   `Wrote ${outputEvents} ` +
-  `(${events.length} notes, ` +
-  `${systems.length} systems)`
+  `(${events.length} notes, ${systems.length} systems)`
 );
 
 console.table(
