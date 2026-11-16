@@ -2,25 +2,74 @@ X:1
 T:O Come, O Come, Emmanuel
 M:4/4
 L:1/4
+%%score melody {rh lh}
+V:melody clef=treble name="Voice"
+V:rh clef=treble name="Piano RH"
+V:lh clef=treble name="Piano LH"
+%%barsperstaff 4
+%%setbarnb 1
+%%measurenb 1
+%%sysstaffsep 80
 K:Em
-%
-% VERSE — Measures 0–3
-z3 E | "Em"G B B B       | "Am"A c B A | "Em"G3 "Am"A |
+% ------------------------------------------------------------
+% MELODY — original notes and lyrics
+% ------------------------------------------------------------
+[V:melody]
+% Measures 1-4
+z3 E | G B B B | A c B A | G3 A |
 w: O | come, O come, Em- | man _ _ nu- | el, and
-%
-% Measures 4–7
-"G"B G "Em"E G        | "Am"A F E D | "Em"E3 A | "Am"A E E F |
-w: ran- som cap- tive | Is _ _ ra-  | el, that | mourns in lone- ly
-%
-% Measures 8–11
-"Em"G2 "Bm"F E | "D"D3 "G"G | "Am"A B "Em"B B | "Am"A c B A |
-w: ex _ ile    | here, un-  | til the son of  | God _ _ ap-
-%
-% Measures 12–15 (verse into refrain)
-"Em"G3 d     | "G"d3 B    | "Em"B3 B   | "Am"A c B A |
+% Measures 5-8
+B G E G | A F E D | E3 A | A E E F |
+w: ran- som cap- tive | Is _ _ ra- | el, that | mourns in lone- ly
+% Measures 9-12
+G2 F E | D3 G | A B B B | A c B A |
+w: ex _ ile | here, un- | til the son of | God _ _ ap-
+% Measures 13-16
+G3 d | d3 B | B3 B | A c B A |
 w: pear; Re- | joice, Re- | joice! Em- | man _ _ nu-
-%
-% Measures 16–19
-"Em"G3 "Am"A | "G"B G "Em"E G | "Am"A F E D | "Em"E4 |
-w: el, shall | come to you, O | Is _ _ ra-  | el
-%
+% Measures 17–20
+G3 A | B G E G | A F E D | E4 |
+w: el, shall | come to you, O | Is _ _ ra- | el
+% ------------------------------------------------------------
+% PIANO RIGHT HAND — melody one octave higher
+% ------------------------------------------------------------
+[V:rh]
+% Measures 1-4
+z3 e | g b b b | a c' b a | g3 a |
+% Measures 5-8
+b g e g | a f e d | e3 a | a e e f |
+% Measures 9-12
+g2 f e | d3 g | a b b b | a c' b a |
+% Measures 13-16
+g3 d' | d'3 b | b3 b | a c' b a |
+% Measures 17-20
+g3 a | b g e g | a f e d | e4 |
+% ------------------------------------------------------------
+% PIANO LEFT HAND — four-note chord voicings
+% ------------------------------------------------------------
+[V:lh]
+% Measures 1-4
+z4 |
+"Em7"[EGBd]2 [EGBd]2 |
+"Am7"[GAce]2 "Cmaj7"[GBce]2
+"Em7"[GBde-]2 "Am7"[GAce]2 |
+% Measures 5-8
+"Gmaj7"[Bd^f]2 "Em7"[GBd]2 & G ^F E2 |
+"Am7"[EGAc]2 "Cmaj7"[EGBc]2 |
+"Em7"[EGBd]2 "Cmaj7"[EGBc]2 |
+"Am7"[EGAc]2  "F#dim7" [E^FAc]2 |
+% Measures 9-12
+"Em7"[EGBd]2 "F#dim7" [E^FAc]2 |
+"Gmaj7"[Bd^f]2 "Em7"[GBd]2 & G ^F E2|
+"Am7"[EGAc]2 "Em7"[EGBd]2 |
+"Am7"[GAce]2 "Cmaj7"[GBce]2
+% Measures 13-16
+"Em7"[GBde]2 "Cmaj7"[GBce]2 |
+"Gmaj7"[Bd^f]4 & G2 ^F2|
+"Em7"[EGBd]2 "Bm7"[^FABd]2 |
+"Am7"[GAce]2 "Cmaj7"[GBce]2 |
+% Measures 17-20
+"Em7"[EGBd]2 "Am7"[EGAc]2 |
+"Gmaj7"[^FGBd]2 "Em7"[EGBd]2 |
+"Am7"[EGAc]4 |
+"Em"[EGB]4 |

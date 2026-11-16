@@ -63,6 +63,7 @@ const user = {
       fragment_bbox: coordinates.annotationToSvg(
         abc, x, y, w, h
       )
+
     };
 
     events.push(event);
@@ -146,24 +147,24 @@ chunks.forEach((svg, system) => {
     .replace(/^[\s\S]*?<svg\b[^>]*>/, '')
     .replace(/<\/svg>[\s\S]*$/, '');
 
-  if (system === 0) {
-    const classMatch = rootTag[0].match(
-      /\bclass=["']([^"']+)["']/
-    );
+if (system === 0) {
+  const classMatch = rootTag[0].match(
+    /\bclass=["']([^"']+)["']/
+  );
 
-    rootClass = classMatch ? classMatch[1] : 'tune0';
+  rootClass = classMatch ? classMatch[1] : 'tune0';
+}
 
-    const styles = body.match(
-      /<style\b[^>]*>[\s\S]*?<\/style>/g
-    ) || [];
+// Collect styles and definitions from every SVG fragment.
+const styles = body.match(
+  /<style\b[^>]*>[\s\S]*?<\/style>/g
+) || [];
 
-    const defs = body.match(
-      /<defs\b[^>]*>[\s\S]*?<\/defs>/g
-    ) || [];
+const defs = body.match(
+  /<defs\b[^>]*>[\s\S]*?<\/defs>/g
+) || [];
 
-    definitions = [...styles, ...defs].join('\n');
-  }
-
+definitions += '\n' + [...styles, ...defs].join('\n');
   // Definitions belong only in the combined SVG root.
   body = body
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, '')
