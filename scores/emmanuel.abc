@@ -35,15 +35,15 @@ w: el, shall | come to you, O | Is _ _ ra- | el
 % ------------------------------------------------------------
 [V:rh]
 % Measures 1-4
-z3 e | g b b b | a c' b a | g3 a |
+z3 e | g b/ b3/2 b | a c' b a/ g/- | g3 a |
 % Measures 5-8
-b g e g | a f e d | e3 a | a e e f |
+b g/ e3/2 g | a f e/ d {Bd}e/- | e3 a | a e/ e3/2 f |
 % Measures 9-12
-g2 f e | d3 g | a b b b | a c' b a |
+g2 f/ e d/- | d3 g | a b/ b3/2 b | a c' b a |
 % Measures 13-16
-g3 d' | d'3 b | b3 b | a c' b a |
+g3/2 G/4B/4d/4e/4g/4b/4 [dd'] | [dgd']3 [Bb] | [Beb]3 b | [ca] [ec'] [eb] [ca] |
 % Measures 17-20
-g3 a | b g e g | a f e d | e4 |
+[Bg]3 [ca] | b g e g & z/ B B B B/ | a f e d & z/ A A A A/ | e4 |
 % ------------------------------------------------------------
 % PIANO LEFT HAND — four-note chord voicings
 % ------------------------------------------------------------
@@ -54,22 +54,22 @@ z4 |
 "Am7"[GAce]2 "Cmaj7"[GBce]2
 "Em7"[GBde-]2 "Am7"[GAce]2 |
 % Measures 5-8
-"Gmaj7"[Bd^f]2 "Em7"[GBd]2 & G ^F E2 |
+"Gmaj7"[Bdf]2 "Em7"[GBd]2 & G f E2 |
 "Am7"[EGAc]2 "Cmaj7"[EGBc]2 |
 "Em7"[EGBd]2 "Cmaj7"[EGBc]2 |
-"Am7"[EGAc]2  "F#dim7" [E^FAc]2 |
+"Am7"[EGAc]2  "F#dim7" [EfAc]2 |
 % Measures 9-12
-"Em7"[EGBd]2 "F#dim7" [E^FAc]2 |
-"Gmaj7"[Bd^f]2 "Em7"[GBd]2 & G ^F E2|
+"Em7"[EGBd]2 "F#dim7" [fAce]2 |
+"Gmaj7"[Bdf]2 "Em7"[GBd]2 & G F E2|
 "Am7"[EGAc]2 "Em7"[EGBd]2 |
 "Am7"[GAce]2 "Cmaj7"[GBce]2
 % Measures 13-16
 "Em7"[GBde]2 "Cmaj7"[GBce]2 |
-"Gmaj7"[Bd^f]4 & G2 ^F2|
-"Em7"[EGBd]2 "Bm7"[^FABd]2 |
+"Gmaj7"[Bdf]4 & G2 F2|
+"Em7"[EGBd]2 "Bm7"[FABd]2 |
 "Am7"[GAce]2 "Cmaj7"[GBce]2 |
 % Measures 17-20
 "Em7"[EGBd]2 "Am7"[EGAc]2 |
-"Gmaj7"[^FGBd]2 "Em7"[EGBd]2 |
-"Am7"[EGAc]4 |
+"Gmaj7"[FGBd]2 "Em7"[EGBd]2 |
+"Am7"[EGAc]2 "F#dim"[FAc]2 |
 "Em"[EGB]4 |
