@@ -2,6 +2,7 @@ X:1
 T:O Come, O Come, Emmanuel
 M:4/4
 L:1/4
+Q:1/4=80
 %%score melody {rh lh}
 V:melody clef=treble name="Voice"
 V:rh clef=treble name="Piano RH"
@@ -9,7 +10,10 @@ V:lh clef=treble name="Piano LH"
 %%barsperstaff 4
 %%setbarnb 1
 %%measurenb 1
-%%sysstaffsep 80
+%%sysstaffsep 85
+%%MIDI gchordoff
+%%MIDI chordattack 5
+%%MIDI gracedivider 6
 K:Em
 % ------------------------------------------------------------
 % MELODY — original notes and lyrics
@@ -34,20 +38,22 @@ w: el, shall | come to you, O | Is _ _ ra- | el
 % PIANO RIGHT HAND — melody one octave higher
 % ------------------------------------------------------------
 [V:rh]
+%%MIDI beat 85 85 85 1
 % Measures 1-4
-z3 e | g b/ b3/2 b | a c' b a/ g/- | g3 a |
+z3 e | g b b b | a c' b a | g3 a |
 % Measures 5-8
-b g/ e3/2 g | a f e/ d {Bd}e/- | e3 a | a e/ e3/2 f |
+b g e g | a f e d | {Bd}e3 a | a e e f |
 % Measures 9-12
-g2 f/ e d/- | d3 g | a b/ b3/2 b | a c' b a |
+g2 f e | d3 g | a b b b | a c' b a |
 % Measures 13-16
-g3/2 G/4B/4d/4e/4g/4b/4 [dd'] | [dgd']3 [Bb] | [Beb]3 b | [ca] [ec'] [eb] [ca] |
+{Bd}g3/2 G/4B/4d/4e/4g/4b/4 [dd'] | [dgd']3 [Bb] | [Beb]3 b | [ca] [ec'] [eb] [ca] |
 % Measures 17-20
-[Bg]3 [ca] | b g e g & z/ B B B B/ | a f e d & z/ A A A A/ | e4 |
+[Bg]3 [ca] | b g e g & !p!  z/ B B B B/ | a f e d & !p! z/ A A A A/ | !arpeggio! [GBe]4 |
 % ------------------------------------------------------------
 % PIANO LEFT HAND — four-note chord voicings
 % ------------------------------------------------------------
 [V:lh]
+%%MIDI beat 50 50 50 1
 % Measures 1-4
 z4 |
 "Em7"[EGBd]2 [EGBd]2 |
@@ -62,7 +68,7 @@ z4 |
 "Em7"[EGBd]2 "F#dim7" [fAce]2 |
 "Gmaj7"[Bdf]2 "Em7"[GBd]2 & G F E2|
 "Am7"[EGAc]2 "Em7"[EGBd]2 |
-"Am7"[GAce]2 "Cmaj7"[GBce]2
+"Am7"[GAce]2 "Cmaj7"[GBce]2 |
 % Measures 13-16
 "Em7"[GBde]2 "Cmaj7"[GBce]2 |
 "Gmaj7"[Bdf]4 & G2 F2|
