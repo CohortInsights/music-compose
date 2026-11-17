@@ -12,7 +12,7 @@ V:lh clef=treble name="Piano LH"
 %%measurenb 1
 %%sysstaffsep 85
 %%MIDI gchordoff
-%%MIDI chordattack 5
+%%MIDI chordattack 8
 %%MIDI gracedivider 6
 K:Em
 % ------------------------------------------------------------
@@ -46,14 +46,14 @@ b g e g | a f e d | {Bd}e3 a | a e e f |
 % Measures 9-12
 g2 f e | d3 g | a b b b | a c' b a |
 % Measures 13-16
-{Bd}g3/2 G/4B/4d/4e/4g/4b/4 [dd'] | [dgd']3 [Bb] | [Beb]3 b | [ca] [ec'] [eb] [ca] |
+{Bd}g3/2 G/4B/4d/4e/4g/4b/4 [dd'] | [dgd']3 [Bb] | [Beb]3 b | [ca] [ec'] [eb] [ac] |
 % Measures 17-20
-[Bg]3 [ca] | b g e g & !p!  z/ B B B B/ | a f e d & !p! z/ A A A A/ | !arpeggio! [GBe]4 |
+[Bg]3 a & !p! z7/2 c/ | b g e g & !p!  z/ B B B B/ | a f e d & !p! z/ A A A A/ | !arpeggio! [GBe]4 |
 % ------------------------------------------------------------
 % PIANO LEFT HAND — four-note chord voicings
 % ------------------------------------------------------------
 [V:lh]
-%%MIDI beat 50 50 50 1
+%%MIDI beat 45 45 45 1
 % Measures 1-4
 z4 |
 "Em7"[EGBd]2 [EGBd]2 |
