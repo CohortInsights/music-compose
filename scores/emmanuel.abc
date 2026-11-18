@@ -2,7 +2,7 @@ X:1
 T:O Come, O Come, Emmanuel
 M:4/4
 L:1/4
-Q:1/4=80
+Q:1/4=90
 %%score melody {rh lh}
 V:melody clef=treble name="Voice"
 V:rh clef=treble name="Piano RH"
@@ -48,7 +48,7 @@ g2 f e | d3 g | a b b b | a c' b a |
 % Measures 13-16
 {Bd}g3/2 G/4B/4d/4e/4g/4b/4 [dd'] | [dgd']3 [Bb] | [Beb]3 b | [ca] [ec'] [eb] [ac] |
 % Measures 17-20
-[Bg]3 a & !p! z7/2 c/ | b g e g & !p!  z/ B B B B/ | a f e d & !p! z/ A A A A/ | !arpeggio! [GBe]4 |
+[Bg]3 a & !p! z7/2 c/ | b g e f/g/ & !p!  z/ B B B3/2 | a f e d & !p! z/ A A A A/ | !arpeggio! [GBe]4 |
 % ------------------------------------------------------------
 % PIANO LEFT HAND — four-note chord voicings
 % ------------------------------------------------------------
@@ -56,11 +56,11 @@ g2 f e | d3 g | a b b b | a c' b a |
 %%MIDI beat 45 45 45 1
 % Measures 1-4
 z4 |
-"Em7"[EGBd]2 [EGBd]2 |
+"Em7"[EGBd]2 [GBde]2 |
 "Am7"[GAce]2 "Cmaj7"[GBce]2
 "Em7"[GBde-]2 "Am7"[GAce]2 |
 % Measures 5-8
-"Gmaj7"[Bdf]2 "Em7"[GBd]2 & G f E2 |
+"Gmaj7"[Bdf]2 "Em7"[GBd]2 & G F E2 |
 "Am7"[EGAc]2 "Cmaj7"[EGBc]2 |
 "Em7"[EGBd]2 "Cmaj7"[EGBc]2 |
 "Am7"[EGAc]2  "F#dim7" [EfAc]2 |
