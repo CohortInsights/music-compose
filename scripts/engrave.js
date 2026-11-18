@@ -7,10 +7,12 @@ const { Abc } = require('abc2svg/abc2svg-1');
 const coordinates = require('./svg-coordinates');
 
 const showFootprint = process.argv.includes('--show-footprint');
+const showMeasures = process.argv.includes('--show-measures');
+const showNoteheads = process.argv.includes('--show-noteheads');
 const projectRoot = path.resolve(__dirname, '..');
 
 if (!process.argv[2]) {
-  console.error('Usage: node scripts/engrave.js <file.abc> [--show-footprint]');
+  console.error('Usage: node scripts/engrave.js <file.abc> [--show-footprint] [--show-measures] [--show-noteheads]');
   process.exit(1);
 }
 
@@ -27,6 +29,8 @@ fs.mkdirSync(outputDir, { recursive: true });
 
 const outputSvg = path.join(outputDir, `${baseName}.svg`);
 const outputEvents = path.join(outputDir, `${baseName}.json`);
+const outputMeasures = path.join(outputDir, `${baseName}-measures.json`);
+const outputNoteheads = path.join(outputDir, `${baseName}-noteheads.json`);
 
 // ------------------------------------------------------------
 // 1. Engrave ABC and collect annotations
@@ -35,6 +39,8 @@ const outputEvents = path.join(outputDir, `${baseName}.json`);
 const chunks = [];
 const events = [];
 const errors = [];
+const noteheads = [];
+let pendingNoteheads = [];
 
 let pending = [];
 let abc;
@@ -63,7 +69,6 @@ const user = {
       fragment_bbox: coordinates.annotationToSvg(
         abc, x, y, w, h
       )
-
     };
 
     events.push(event);
@@ -80,10 +85,27 @@ const user = {
     }
 
     pending = [];
+    for (const head of pendingNoteheads) head.system = system;
+    pendingNoteheads = [];
   }
 };
 
 abc = new Abc(user);
+
+// abc2svg calls psxygl with the exact engraved notehead position,
+// including chord displacement, grace-note offset and staff placement.
+// Returning false preserves abc2svg's normal rendering.
+abc.psxygl = (x, y, glyph) => {
+  const head = {
+    x: abc.sx(x),
+    y_fragment: abc.sy(y),
+    glyph
+  };
+  noteheads.push(head);
+  pendingNoteheads.push(head);
+  return false;
+};
+
 abc.tosvg(input, source);
 
 if (errors.length) {
@@ -94,6 +116,10 @@ if (errors.length) {
 
 if (!chunks.length) {
   throw new Error('No SVG fragments produced');
+}
+
+if (pendingNoteheads.length) {
+  throw new Error('Noteheads remained after the final SVG fragment');
 }
 
 if (pending.length) {
@@ -119,6 +145,12 @@ const { systems, width, totalHeight } =
   coordinates.layoutSystems(chunks);
 
 coordinates.placeEvents(events, systems);
+const measures = coordinates.extractMeasures(chunks, systems);
+
+for (const head of noteheads) {
+  head.y = head.y_fragment + systems[head.system].y_offset;
+  delete head.y_fragment;
+}
 
 // Preserve ABC source ordering.
 events.sort(
@@ -147,24 +179,25 @@ chunks.forEach((svg, system) => {
     .replace(/^[\s\S]*?<svg\b[^>]*>/, '')
     .replace(/<\/svg>[\s\S]*$/, '');
 
-if (system === 0) {
-  const classMatch = rootTag[0].match(
-    /\bclass=["']([^"']+)["']/
-  );
+  if (system === 0) {
+    const classMatch = rootTag[0].match(
+      /\bclass=["']([^"']+)["']/
+    );
 
-  rootClass = classMatch ? classMatch[1] : 'tune0';
-}
+    rootClass = classMatch ? classMatch[1] : 'tune0';
+  }
 
-// Collect styles and definitions from every SVG fragment.
-const styles = body.match(
-  /<style\b[^>]*>[\s\S]*?<\/style>/g
-) || [];
+  // Collect styles and definitions from every SVG fragment.
+  const styles = body.match(
+    /<style\b[^>]*>[\s\S]*?<\/style>/g
+  ) || [];
 
-const defs = body.match(
-  /<defs\b[^>]*>[\s\S]*?<\/defs>/g
-) || [];
+  const defs = body.match(
+    /<defs\b[^>]*>[\s\S]*?<\/defs>/g
+  ) || [];
 
-definitions += '\n' + [...styles, ...defs].join('\n');
+  definitions += '\n' + [...styles, ...defs].join('\n');
+
   // Definitions belong only in the combined SVG root.
   body = body
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, '')
@@ -182,9 +215,11 @@ definitions += '\n' + [...styles, ...defs].join('\n');
 // 4. Optional diagnostic footprint overlay
 // ------------------------------------------------------------
 
-const overlay = showFootprint
-  ? coordinates.footprintOverlay(events)
-  : '';
+const overlay = [
+  showFootprint ? coordinates.footprintOverlay(events) : '',
+  showMeasures ? coordinates.measureFootprintOverlay(measures) : '',
+  showNoteheads ? coordinates.noteheadOverlay(noteheads) : ''
+].join('\n');
 
 // ------------------------------------------------------------
 // 5. Generate combined SVG
@@ -216,6 +251,18 @@ fs.writeFileSync(
   'utf8'
 );
 
+fs.writeFileSync(
+  outputMeasures,
+  JSON.stringify(measures, null, 2),
+  'utf8'
+);
+
+fs.writeFileSync(
+  outputNoteheads,
+  JSON.stringify(noteheads, null, 2),
+  'utf8'
+);
+
 console.log(
   `Wrote ${outputSvg} (${width} x ${totalHeight})`
 );
@@ -224,6 +271,9 @@ console.log(
   `Wrote ${outputEvents} ` +
   `(${events.length} notes, ${systems.length} systems)`
 );
+
+console.log(`Wrote ${outputMeasures} (${measures.length} measures)`);
+console.log(`Wrote ${outputNoteheads} (${noteheads.length} noteheads)`);
 
 console.table(
   systems.map(s => ({
