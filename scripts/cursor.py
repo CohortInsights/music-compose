@@ -1,7 +1,8 @@
-"""Two-system score renderer with one-system vertical transitions.
+"""Two stationary score rows with an inactive-row crossfade.
 
-The active system occupies the upper row; the next system is visible below.
-At a transition, the two-row stack slides up one row.
+The cursor alternates between the top and bottom rows. After a row
+becomes inactive, its old system dissolves into the next system while
+the active row and cursor remain entirely unchanged.
 """
 
 import bisect
@@ -19,8 +20,10 @@ from render_utils import rasterize_chrome
 
 def render_movie(
     strip_path, width, height, xs, times, output, fps, resolution,
-    visible, measure_starts, chrome=None,
+    visible, measure_starts, chrome=None, dissolve=2.0,
 ):
+    if dissolve < 0 or not math.isfinite(dissolve):
+        raise ValueError('Dissolve duration must be a finite, nonnegative number of seconds')
     if not shutil.which('ffmpeg'):
         raise RuntimeError('ffmpeg not found')
     if len(xs) < 2 or len(xs) != len(times):
@@ -138,9 +141,6 @@ def render_movie(
     ]
     completed = 0
     previous_page = -1
-    # Scroll the stack over this interval. The first frame of the new
-    # system starts the transition, keeping the next notation visible.
-    scroll_seconds = 0.30
 
     with tempfile.TemporaryFile(mode='w+b') as error_file:
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=error_file)
@@ -181,39 +181,73 @@ def render_movie(
                 x = min(max(x, measure_starts[first]), right)
                 cursor_x = round(margin + (x - left) * scale)
 
-                # The incoming system has been visible in the lower row.
-                # Animate it upward, preserving its appearance and scale.
-                transition_start = page_start_times[page]
-                if page > 0 and t < transition_start + scroll_seconds:
-                    u = max(0.0, min(1.0, (t - transition_start) / scroll_seconds))
-                    # Smoothstep eases the vertical motion at both ends.
-                    u = u * u * (3.0 - 2.0 * u)
-                    shift = round(row_h * (1.0 - u))
-                else:
-                    shift = 0
-
+                # Alternate the active system between two FIXED rows.
+                # When the cursor changes rows, the abandoned row is
+                # dissolved into the next system. Never fade the cursor.
+                active_row = page % 2
+                inactive_row = 1 - active_row
                 canvas = Image.new('RGB', (out_w, out_h), 'white')
-                # Previous row is retained during the slide; active and
-                # upcoming systems remain visually continuous.
-                for index in (page - 1, page, page + 1):
-                    if index < 0 or index >= page_count:
-                        continue
-                    if index == page - 1:
-                        y = row_inset + shift - row_h
-                    elif index == page:
-                        y = row_inset + shift
-                    else:
-                        y = row_inset + shift + row_h
-                    score = raster_pages[index]
-                    if y >= out_h or y + score.height <= 0:
-                        continue
-                    # PIL clips pasted images to the canvas bounds.
-                    canvas.paste(
-                        score, (margin, y),
-                        score if score.mode == 'RGBA' else None,
-                    )
 
-                cursor_y = row_inset + shift
+                def paste_system(index, row, opacity=1.0):
+                    if index < 0 or index >= page_count or opacity <= 0:
+                        return
+                    score = raster_pages[index]
+                    y = row * row_h + row_inset
+                    if opacity >= 1.0:
+                        canvas.paste(
+                            score, (margin, y),
+                            score if score.mode == 'RGBA' else None,
+                        )
+                    else:
+                        # Composite onto white first so transparency in the
+                        # SVG doesn't introduce dark halos during the fade.
+                        layer = Image.new('RGB', score.size, 'white')
+                        layer.paste(
+                            score, (0, 0),
+                            score if score.mode == 'RGBA' else None,
+                        )
+                        white = Image.new('RGB', score.size, 'white')
+                        blended = Image.blend(white, layer, opacity)
+                        canvas.paste(blended, (margin, y))
+
+                paste_system(page, active_row)
+                if page == 0:
+                    # At startup the lower row already shows System 2.
+                    paste_system(1, inactive_row)
+                else:
+                    # At the transition, the former active row contains
+                    # page-1. Crossfade it to page+1 while page plays.
+                    # The replacement is ready within the requested duration, or
+                    # sooner if the next page turn is unusually close.
+                    fade_start = page_start_times[page]
+                    fade_span = dissolve
+                    if page + 1 < page_count:
+                        fade_span = min(
+                            fade_span,
+                            max(0.0, page_start_times[page + 1] - fade_start),
+                        )
+                    alpha = (
+                        min(1.0, max(0.0, (t - fade_start) / fade_span))
+                        if fade_span > 0 else 1.0
+                    )
+                    # Blend the two complete row images, not two
+                    # separately faded overlays (which would erase one).
+                    def row_image(index):
+                        layer = Image.new('RGB', (out_w, row_h), 'white')
+                        if 0 <= index < page_count:
+                            score = raster_pages[index]
+                            layer.paste(
+                                score, (margin, row_inset),
+                                score if score.mode == 'RGBA' else None,
+                            )
+                        return layer
+
+                    old_row = row_image(page - 1)
+                    new_row = row_image(page + 1)
+                    dissolved = Image.blend(old_row, new_row, alpha)
+                    canvas.paste(dissolved, (0, inactive_row * row_h))
+
+                cursor_y = active_row * row_h + row_inset
                 draw = ImageDraw.Draw(canvas, 'RGBA')
                 draw.rectangle(
                     (cursor_x - 9, cursor_y, cursor_x + 9, cursor_y + image_h),

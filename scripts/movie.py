@@ -5,6 +5,7 @@ Requires mido, Pillow, Google Chrome, and ffmpeg on PATH.
 The engraver and its JSON outputs are not modified.
 """
 import argparse
+import math
 import bisect
 from collections import defaultdict
 from fractions import Fraction
@@ -344,6 +345,10 @@ def main():
     parser.add_argument('--measures', type=int, default=4)
     parser.add_argument('--fps', type=int, default=30)
     parser.add_argument(
+        '--dissolve', type=float, default=2.0, metavar='SECONDS',
+        help='Inactive-system crossfade duration in seconds (cursor renderer; default: 2.0)'
+    )
+    parser.add_argument(
         '--renderer', choices=['scroll', 'cursor'], default='scroll',
         help='Rendering mode (cursor requires scripts/cursor.py)'
     )
@@ -361,6 +366,8 @@ def main():
     )
 
     args = parser.parse_args()
+    if not math.isfinite(args.dissolve) or args.dissolve < 0:
+        parser.error('--dissolve must be a finite, nonnegative number of seconds')
 
     if args.measures <= 0 or args.fps <= 0 or args.padding < 0:
         parser.error('measures/fps must be positive and padding nonnegative')
@@ -455,7 +462,8 @@ def main():
         resolutions[args.resolution],
         args.measures,
         measure_starts,
-        args.chrome
+        args.chrome,
+        **({'dissolve': args.dissolve} if args.renderer == 'cursor' else {})
     )
 
     print(f'Wrote {video}', flush=True)
