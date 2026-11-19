@@ -1,4 +1,4 @@
-"""Two stationary score rows with an inactive-row crossfade.
+"""Two stationary score rows with overlapping measures and an inactive-row crossfade.
 
 The cursor alternates between the top and bottom rows. After a row
 becomes inactive, its old system dissolves into the next system while
@@ -20,7 +20,7 @@ from render_utils import rasterize_chrome
 
 def render_movie(
     strip_path, width, height, xs, times, output, fps, resolution,
-    visible, measure_starts, chrome=None, dissolve=2.0,
+    visible, measure_starts, chrome=None, dissolve=2.0, overlap=1,
 ):
     if dissolve < 0 or not math.isfinite(dissolve):
         raise ValueError('Dissolve duration must be a finite, nonnegative number of seconds')
@@ -43,7 +43,15 @@ def render_movie(
         raise ValueError('Invalid resolution')
 
     total_measures = len(measure_starts)
-    page_count = math.ceil(total_measures / visible)
+    if not isinstance(overlap, int) or not 0 <= overlap < visible:
+        raise ValueError('Overlap must be an integer between 0 and --measures - 1')
+
+    # Subsequent systems repeat the last `overlap` measures.
+    stride = visible - overlap
+    page_firsts = [0]
+    while page_firsts[-1] + visible < total_measures:
+        page_firsts.append(page_firsts[-1] + stride)
+    page_count = len(page_firsts)
 
     # A consistent 5% margin at either end. All systems use the same
     # horizontal scale so notation does not change size at page turns.
@@ -56,8 +64,7 @@ def render_movie(
     # This keeps opening barlines and nearby notation away from the crop edge.
     opening_pad = 12.0
     pages = []
-    for page in range(page_count):
-        first = page * visible
+    for page, first in enumerate(page_firsts):
         last = min(first + visible, total_measures)
         left = measure_starts[first]
         right = measure_starts[last] if last < total_measures else width
@@ -98,36 +105,49 @@ def render_movie(
                 rasterize_chrome(svg_page, pixel_width, image_h, chrome)
             )
 
-    # Each system switches one frame after its final note onset. This
-    # gives the performer the remainder of that note to read ahead.
-    # The new cursor begins at the first measure boundary and counts in
-    # to the next system's first note.
+    # Switch just after the last note onset in the outgoing system.
+    # For overlap > 0, both cursors follow the shared measures until
+    # that switch. For overlap == 0, there is no duplicated cursor.
     page_events = []
     for first, last, _, _ in pages:
         start = bisect.bisect_left(xs, measure_starts[first])
         end_x = measure_starts[last] if last < total_measures else width
         end = bisect.bisect_left(xs, end_x)
         if start >= end:
-            raise ValueError(
-                f'No synchronized notes in measures {first + 1}–{last}'
-            )
+            raise ValueError(f'No synchronized notes in measures {first + 1}–{last}')
         page_events.append((start, end))
 
     page_start_times = [0.0]
+    shared_intervals = []
     for page in range(page_count - 1):
-        _, end = page_events[page]
-        next_start, _ = page_events[page + 1]
-        last_onset = times[end - 1]
-        next_onset = times[next_start]
-        # Prefer the first frame after the last onset. If the following
-        # note arrives sooner than one frame, switch at that onset.
-        transition = min(last_onset + 1.0 / fps, next_onset)
-        page_start_times.append(transition)
+        start_event, end_event = page_events[page]
+        last_onset = times[end_event - 1]
+        following = times[end_event] if end_event < len(times) else float('inf')
+        switch = min(last_onset + 1.0 / fps, following)
+        page_start_times.append(switch)
+
+        if overlap:
+            shared_measure = pages[page + 1][0]
+            shared_start = bisect.bisect_left(xs, measure_starts[shared_measure])
+            if shared_start >= end_event:
+                raise ValueError(
+                    f'Overlapping measures starting at {shared_measure + 1} '
+                    'have no synchronized notes'
+                )
+            shared_intervals.append((times[shared_start], switch))
+        else:
+            shared_intervals.append((switch, switch))
+
+    # Earliest moment the NEXT page must be fully visible. For overlap,
+    # this is the first note of its shared section; without overlap,
+    # this is the first note of the new system.
+    next_read_times = [times[start] for start, _ in page_events]
 
     duration = times[-1] + 2.0
     total_frames = math.ceil(duration * fps)
     print(
-        f'Cursor renderer: {page_count} systems, up to {visible} measures each\n'
+        f'Cursor renderer: {page_count} systems, up to {visible} measures each, '
+        f'{overlap} overlapping measures\n'
         f'Video: {out_w}x{out_h} at {fps} fps; total frames: {total_frames}',
         flush=True,
     )
@@ -151,35 +171,34 @@ def render_movie(
                 page = max(0, min(page_count - 1, bisect.bisect_right(page_start_times, t) - 1))
                 first, last, left, right = pages[page]
 
-                start_event, end_event = page_events[page]
-                first_note_time = times[start_event]
-                first_note_x = xs[start_event]
-                measure_left = measure_starts[first]
-
-                if t < first_note_time:
-                    # Count in from the measure boundary to the first note.
-                    # For the opening system, the count-in starts at t=0;
-                    # subsequent systems start at the preceding page turn.
-                    start_time = page_start_times[page]
-                    available = first_note_time - start_time
-                    if available > 0:
-                        fraction = max(0.0, min(1.0, (t - start_time) / available))
+                def position_for_system(index):
+                    """Score x at time t, including count-in before first note."""
+                    f, l, crop_left, crop_right = pages[index]
+                    start_event, end_event = page_events[index]
+                    first_note_time = times[start_event]
+                    first_note_x = xs[start_event]
+                    measure_left = measure_starts[f]
+                    if t < first_note_time:
+                        # For the first system, start at t=0. Subsequent
+                        # systems' shared measure is already tracked by
+                        # the duplicate cursor before the handoff.
+                        start_time = 0.0 if index == 0 else shared_intervals[index - 1][0]
+                        available = first_note_time - start_time
+                        fraction = (
+                            max(0.0, min(1.0, (t - start_time) / available))
+                            if available > 0 else 1.0
+                        )
                         x = measure_left + fraction * (first_note_x - measure_left)
+                    elif t >= times[end_event - 1]:
+                        x = xs[end_event - 1]
                     else:
-                        x = first_note_x
-                elif t >= times[end_event - 1]:
-                    # Hold the final note until the system changes.
-                    x = xs[end_event - 1]
-                else:
-                    # Interpolate only between notes belonging to this system.
-                    i = min(end_event - 2, bisect.bisect_right(times, t) - 1)
-                    fraction = (t - times[i]) / (times[i + 1] - times[i])
-                    x = xs[i] + fraction * (xs[i + 1] - xs[i])
+                        i = min(end_event - 2, bisect.bisect_right(times, t) - 1)
+                        fraction = (t - times[i]) / (times[i + 1] - times[i])
+                        x = xs[i] + fraction * (xs[i + 1] - xs[i])
+                    x = min(max(x, measure_left), crop_right)
+                    return round(margin + (x - crop_left) * scale)
 
-                # Keep the cursor within its current system. In particular,
-                # don't let it drift into the next page before the page turn.
-                x = min(max(x, measure_starts[first]), right)
-                cursor_x = round(margin + (x - left) * scale)
+                cursor_x = position_for_system(page)
 
                 # Alternate the active system between two FIXED rows.
                 # When the cursor changes rows, the abandoned row is
@@ -224,7 +243,7 @@ def render_movie(
                     if page + 1 < page_count:
                         fade_span = min(
                             fade_span,
-                            max(0.0, page_start_times[page + 1] - fade_start),
+                            max(0.0, next_read_times[page + 1] - fade_start),
                         )
                     alpha = (
                         min(1.0, max(0.0, (t - fade_start) / fade_span))
@@ -247,25 +266,43 @@ def render_movie(
                     dissolved = Image.blend(old_row, new_row, alpha)
                     canvas.paste(dissolved, (0, inactive_row * row_h))
 
-                cursor_y = active_row * row_h + row_inset
                 draw = ImageDraw.Draw(canvas, 'RGBA')
-                draw.rectangle(
-                    (cursor_x - 9, cursor_y, cursor_x + 9, cursor_y + image_h),
-                    fill=(70, 115, 190, 18),
-                )
-                draw.line(
-                    (cursor_x, cursor_y, cursor_x, cursor_y + image_h),
-                    fill=(65, 95, 140, 150), width=1,
-                )
+
+                def draw_cursor(index, row):
+                    cx = position_for_system(index)
+                    cy = row * row_h + row_inset
+                    draw.rectangle(
+                        (cx - 9, cy, cx + 9, cy + image_h),
+                        fill=(70, 115, 190, 18),
+                    )
+                    draw.line(
+                        (cx, cy, cx, cy + image_h),
+                        fill=(65, 95, 140, 150), width=1,
+                    )
+
+                draw_cursor(page, active_row)
+
+                # During the shared measure, duplicate the cursor on the
+                # upcoming system. Both follow the SAME musical timeline.
+                # Never fade either cursor.
+                if overlap and page + 1 < page_count:
+                    overlap_start, overlap_end = shared_intervals[page]
+                    if overlap_start <= t < overlap_end:
+                        draw_cursor(page + 1, inactive_row)
+
                 process.stdin.write(canvas.tobytes())
 
                 if page != previous_page:
                     print(f'Displaying measures {first + 1}–{last}', flush=True)
                     previous_page = page
 
+                # Progress reporting follows the actual active score position.
+                active_x = measure_starts[first] + (
+                    (cursor_x - margin) / scale + left - measure_starts[first]
+                )
                 current_measure = min(
                     total_measures - 1,
-                    max(0, bisect.bisect_right(measure_starts, x) - 1),
+                    max(0, bisect.bisect_right(measure_starts, active_x) - 1),
                 )
                 while completed < current_measure:
                     completed += 1

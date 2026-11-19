@@ -150,9 +150,13 @@ def make_strip(svg_path, measures, noteheads, pad=20, opening_margin=25):
         raise ValueError('No SVG drawing content')
 
     positions = defaultdict(list)
+    measure_starts = []
     offset = 0.0
 
     for crop in crops:
+        # Record the exact boundary used by the assembled SVG,
+        # including any opening trim applied to earlier measures.
+        measure_starts.append(offset)
         x = crop['x']
         y = crop['y']
         w = crop['width']
@@ -204,7 +208,8 @@ def make_strip(svg_path, measures, noteheads, pad=20, opening_margin=25):
         ET.tostring(out, encoding='unicode'),
         positions,
         strip_w,
-        h
+        h,
+        measure_starts
     )
 
 
@@ -343,6 +348,8 @@ def main():
     parser.add_argument('--out-dir', type=Path, default=None)
     parser.add_argument('--preview', action='store_true')
     parser.add_argument('--measures', type=int, default=4)
+    parser.add_argument('--overlap', type=int, default=1, metavar='N',
+                        help='Measures repeated between cursor systems (default: 1)')
     parser.add_argument('--fps', type=int, default=30)
     parser.add_argument(
         '--dissolve', type=float, default=2.0, metavar='SECONDS',
@@ -369,6 +376,8 @@ def main():
     if not math.isfinite(args.dissolve) or args.dissolve < 0:
         parser.error('--dissolve must be a finite, nonnegative number of seconds')
 
+    if args.renderer == 'cursor' and not 0 <= args.overlap < args.measures:
+        parser.error('--overlap must be >= 0 and less than --measures')
     if args.measures <= 0 or args.fps <= 0 or args.padding < 0:
         parser.error('measures/fps must be positive and padding nonnegative')
 
@@ -385,7 +394,7 @@ def main():
     if not svg.exists():
         raise ValueError(f'Missing engraved SVG: {svg}')
 
-    strip, positions, width, height = make_strip(
+    strip, positions, width, height, measure_starts = make_strip(
         svg, measures, heads, args.padding
     )
 
@@ -422,16 +431,8 @@ def main():
         flush=True
     )
 
-    # Measure boundaries in the assembled horizontal strip.
-    # These use the same ordering and widths as make_strip().
-    ordered_measures = sorted(measures, key=lambda m: m['measure'])
-
-    measure_starts = []
-    offset = 0.0
-
-    for measure in ordered_measures:
-        measure_starts.append(offset)
-        offset += float(measure['width'])
+    # Boundaries come directly from make_strip(), so they use the
+    # same trimmed crop widths as the assembled SVG and noteheads.
 
     resolutions = {
         '720p': (1280, 720),
@@ -463,7 +464,7 @@ def main():
         args.measures,
         measure_starts,
         args.chrome,
-        **({'dissolve': args.dissolve} if args.renderer == 'cursor' else {})
+        **({'dissolve': args.dissolve, 'overlap': args.overlap} if args.renderer == 'cursor' else {})
     )
 
     print(f'Wrote {video}', flush=True)
