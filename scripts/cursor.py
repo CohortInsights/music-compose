@@ -1,7 +1,7 @@
-"""Two stationary score rows with overlapping measures and an inactive-row crossfade.
+"""Two stationary score rows with overlapping measures and a two-stage dissolve.
 
 The cursor alternates between the top and bottom rows. After a row
-becomes inactive, its old system dissolves into the next system while
+becomes inactive, its old system fades to white, then the next fades in while
 the active row and cursor remain entirely unchanged.
 """
 
@@ -235,11 +235,11 @@ def render_movie(
                     paste_system(1, inactive_row)
                 else:
                     # At the transition, the former active row contains
-                    # page-1. Crossfade it to page+1 while page plays.
-                    # The replacement is ready within the requested duration, or
+                    # page-1. Fade it to white, then fade in page+1.
+                    # The replacement is ready within two requested phase durations, or
                     # sooner if the next page turn is unusually close.
                     fade_start = page_start_times[page]
-                    fade_span = dissolve
+                    fade_span = 2.0 * dissolve
                     if page + 1 < page_count:
                         fade_span = min(
                             fade_span,
@@ -249,8 +249,8 @@ def render_movie(
                         min(1.0, max(0.0, (t - fade_start) / fade_span))
                         if fade_span > 0 else 1.0
                     )
-                    # Blend the two complete row images, not two
-                    # separately faded overlays (which would erase one).
+                    # Two-stage dissolve: old -> white -> new. The duration
+                    # is twice --dissolve: one full duration for each stage.
                     def row_image(index):
                         layer = Image.new('RGB', (out_w, row_h), 'white')
                         if 0 <= index < page_count:
@@ -263,7 +263,11 @@ def render_movie(
 
                     old_row = row_image(page - 1)
                     new_row = row_image(page + 1)
-                    dissolved = Image.blend(old_row, new_row, alpha)
+                    blank_row = Image.new('RGB', (out_w, row_h), 'white')
+                    if alpha < 0.5:
+                        dissolved = Image.blend(old_row, blank_row, alpha * 2.0)
+                    else:
+                        dissolved = Image.blend(blank_row, new_row, (alpha - 0.5) * 2.0)
                     canvas.paste(dissolved, (0, inactive_row * row_h))
 
                 draw = ImageDraw.Draw(canvas, 'RGBA')
