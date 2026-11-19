@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a silent scrolling score from ABC, engraved SVG/JSON, and MIDI.
+"""Prepare synchronized score data and render a silent score movie.
 
 Requires mido, Pillow, Google Chrome, and ffmpeg on PATH.
 The engraver and its JSON outputs are not modified.
@@ -8,18 +8,11 @@ import argparse
 import bisect
 from collections import defaultdict
 from fractions import Fraction
-import tempfile
-from html import escape
 import json
-import math
 from pathlib import Path
 import re
-import shutil
-import subprocess
 import sys
 import xml.etree.ElementTree as ET
-from scipy.interpolate import PchipInterpolator
-from scipy.interpolate import CubicHermiteSpline
 
 SVG_NS = 'http://www.w3.org/2000/svg'
 ET.register_namespace('', SVG_NS)
@@ -343,314 +336,6 @@ def synchronize(positions, abc_beats, midi, measure_count):
     return xs, times
 
 
-def find_chrome(explicit=None):
-    """Locate Google Chrome, including its standard macOS app bundle."""
-    candidates = [explicit] if explicit else [
-        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-        str(Path.home() / 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
-        shutil.which('google-chrome'),
-        shutil.which('google-chrome-stable'),
-        shutil.which('chromium'),
-        shutil.which('chromium-browser'),
-    ]
-    for candidate in candidates:
-        if candidate and Path(candidate).is_file():
-            return str(Path(candidate).resolve())
-    raise RuntimeError('Google Chrome not found. Use --chrome /path/to/Google Chrome')
-
-
-def rasterize_chrome(svg_path, image_w, image_h, chrome=None):
-    """Render the full SVG strip with Chrome, preserving browser music glyphs.
-
-    Chrome screenshots are viewport-sized; request the entire scaled strip.
-    Check actual PNG dimensions so a truncated screenshot cannot silently
-    become a truncated movie. Very long strips need tiled rendering later.
-    """
-    from PIL import Image
-    if image_w > 16000 or image_h > 16000:
-        raise RuntimeError(
-            f'Chrome single-shot strip is {image_w}x{image_h}; exceeds the '
-            'safe 16000px screenshot limit. Tiled rendering is needed.'
-        )
-    browser = find_chrome(chrome)
-    with tempfile.TemporaryDirectory(prefix='music-movie-') as temp:
-        png_path = Path(temp) / 'strip.png'
-        page = Path(temp) / 'render.html'
-        page.write_text(
-            '<!doctype html><html><head><meta charset=\"utf-8\">'
-            '<style>html,body{margin:0;padding:0;background:white;overflow:hidden}'
-            'img{display:block}</style></head><body>'
-            f'<img src=\"{escape(svg_path.resolve().as_uri(), quote=True)}\" '
-            f'width=\"{image_w}\" height=\"{image_h}\">'
-            '</body></html>', encoding='utf-8'
-        )
-        # Chrome may enforce a minimum window size, so crop surplus pixels
-        # after validating the screenshot covers the requested SVG extent.
-        command = [browser, '--headless', '--no-first-run', '--no-default-browser-check',
-                   '--disable-gpu', '--hide-scrollbars', '--allow-file-access-from-files',
-                   '--force-device-scale-factor=1',
-                   f'--window-size={max(image_w, 500)},{max(image_h, 300)}',
-                   f'--screenshot={png_path}', page.as_uri()]
-        result = subprocess.run(command, capture_output=True, text=True)
-        if result.returncode or not png_path.exists():
-            raise RuntimeError('Chrome SVG screenshot failed:\n' + result.stderr[-3000:])
-        with Image.open(png_path) as png:
-            if png.width < image_w or png.height < image_h:
-                raise RuntimeError(
-                    f'Chrome screenshot was {png.width}x{png.height}, expected at least '
-                    f'{image_w}x{image_h}. Refusing to crop the score.'
-                )
-            return png.convert('RGBA').crop((0, 0, image_w, image_h))
-
-
-
-def render_movie(
-    strip_path,
-    width,
-    height,
-    xs,
-    times,
-    output,
-    fps,
-    resolution,
-    visible,
-    measure_starts,
-    chrome=None,
-):
-    import bisect
-    import math
-    import shutil
-    import subprocess
-    import tempfile
-    import time
-
-    from PIL import Image, ImageDraw
-
-    if not shutil.which('ffmpeg'):
-        raise RuntimeError('ffmpeg not found')
-
-    if not xs or len(xs) != len(times):
-        raise ValueError('Invalid scroll synchronization points')
-
-    if len(xs) < 2:
-        raise ValueError('At least two synchronization points required')
-
-    if any(times[i] <= times[i - 1] for i in range(1, len(times))):
-        raise ValueError('Scroll times must be strictly increasing')
-
-    if visible <= 0:
-        raise ValueError('Visible measures must be positive')
-
-    if not measure_starts:
-        raise ValueError('No measure positions provided')
-
-    out_w, out_h = resolution
-
-    count = min(visible, len(measure_starts))
-    end_x = (
-        measure_starts[count]
-        if count < len(measure_starts)
-        else width
-    )
-
-    visible_width = end_x - measure_starts[0]
-
-    if visible_width <= 0:
-        raise ValueError('Invalid visible measure width')
-
-    scale = out_w / visible_width
-
-    image_w = max(1, math.ceil(width * scale))
-    image_h = max(1, math.ceil(height * scale))
-
-    print(
-        f'Rendering {count} visible measures '
-        f'at scale {scale:.3f}...',
-        flush=True
-    )
-
-    # Rasterize the complete score once.
-    score = rasterize_chrome(
-        strip_path,
-        image_w,
-        image_h,
-        chrome
-    )
-
-    guide = round(out_w * 0.25)
-    top = (out_h - image_h) // 2
-
-    duration = times[-1] + 2.0
-    total_frames = math.ceil(duration * fps)
-
-    print(
-        f'Video: {out_w}x{out_h} at {fps} fps\n'
-        f'Score raster: {score.width}x{score.height}\n'
-        f'Total frames: {total_frames}',
-        flush=True
-    )
-
-    command = [
-        'ffmpeg',
-        '-y',
-        '-loglevel', 'error',
-        '-f', 'rawvideo',
-        '-pix_fmt', 'rgb24',
-        '-s', f'{out_w}x{out_h}',
-        '-r', str(fps),
-        '-i', '-',
-        '-an',
-        '-c:v', 'libx264',
-        '-pix_fmt', 'yuv420p',
-        '-movflags', '+faststart',
-        str(output)
-    ]
-
-    completed = 0
-    total_measures = len(measure_starts)
-
-    with tempfile.TemporaryFile(mode='w+b') as error_file:
-
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stderr=error_file
-        )
-
-        render_start = time.monotonic()
-
-        try:
-            for frame in range(total_frames):
-                t = frame / fps
-
-                # Original piecewise-linear interpolation.
-                idx = bisect.bisect_right(times, t) - 1
-
-                if idx < 0:
-                    x = xs[0]
-                elif idx >= len(times) - 1:
-                    x = xs[-1]
-                else:
-                    ratio = (
-                        (t - times[idx])
-                        / (times[idx + 1] - times[idx])
-                    )
-                    x = (
-                        xs[idx]
-                        + ratio * (xs[idx + 1] - xs[idx])
-                    )
-
-                # Fast integer-pixel positioning.
-                canvas = Image.new(
-                    'RGB',
-                    (out_w, out_h),
-                    'white'
-                )
-
-                canvas.paste(
-                    score,
-                    (round(guide - x * scale), top),
-                    score if score.mode == 'RGBA' else None
-                )
-
-                # Stationary reading guide.
-                draw = ImageDraw.Draw(canvas, 'RGBA')
-
-                draw.rectangle(
-                    (
-                        guide - 9,
-                        top,
-                        guide + 9,
-                        top + image_h
-                    ),
-                    fill=(70, 115, 190, 18)
-                )
-
-                draw.line(
-                    (
-                        guide,
-                        top,
-                        guide,
-                        top + image_h
-                    ),
-                    fill=(65, 95, 140, 150),
-                    width=1
-                )
-
-                process.stdin.write(canvas.tobytes())
-
-                # Musical measure progress.
-                while (
-                    completed + 1 < total_measures
-                    and x >= measure_starts[completed + 1]
-                ):
-                    completed += 1
-                    print(
-                        f'Measure {completed}/{total_measures} submitted',
-                        flush=True
-                    )
-
-                # Rendering clock every 300 frames.
-                if (frame + 1) % 300 == 0:
-                    elapsed = time.monotonic() - render_start
-                    rendered = frame + 1
-                    rate = rendered / elapsed
-                    remaining = (
-                        (total_frames - rendered) / rate
-                        if rate > 0 else 0
-                    )
-
-                    print(
-                        f'Frames {rendered}/{total_frames} '
-                        f'({100 * rendered / total_frames:.1f}%) | '
-                        f'Elapsed {elapsed / 60:.1f} min | '
-                        f'{rate:.1f} fps | '
-                        f'ETA {remaining / 60:.1f} min',
-                        flush=True
-                    )
-
-        except Exception:
-            process.kill()
-            process.wait()
-            raise
-
-        finally:
-            if process.stdin:
-                process.stdin.close()
-
-        print('Finalizing MP4...', flush=True)
-
-        return_code = process.wait()
-
-        if return_code:
-            error_file.seek(0)
-            error = error_file.read().decode(
-                errors='replace'
-            )
-            raise RuntimeError(
-                'ffmpeg failed:\n' + error[-3000:]
-            )
-
-    elapsed = time.monotonic() - render_start
-
-    print(
-        f'Rendering completed in {elapsed / 60:.2f} minutes '
-        f'({total_frames / elapsed:.1f} fps average)',
-        flush=True
-    )
-
-    for measure in range(
-        completed + 1,
-        total_measures + 1
-    ):
-        print(
-            f'Measure {measure}/{total_measures} submitted',
-            flush=True
-        )
-
-
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('score', type=Path)
@@ -658,6 +343,14 @@ def main():
     parser.add_argument('--preview', action='store_true')
     parser.add_argument('--measures', type=int, default=4)
     parser.add_argument('--fps', type=int, default=30)
+    parser.add_argument(
+        '--renderer', choices=['scroll', 'cursor'], default='scroll',
+        help='Rendering mode (cursor requires scripts/cursor.py)'
+    )
+    parser.add_argument(
+        '--reset', type=int, default=4,
+        help='Measures between cursor resets (cursor renderer only)'
+    )
     parser.add_argument(
         '--resolution',
         choices=['720p', '1080p', '2160p'],
@@ -675,6 +368,9 @@ def main():
 
     if args.measures <= 0 or args.fps <= 0 or args.padding < 0:
         parser.error('measures/fps must be positive and padding nonnegative')
+
+    if args.reset < 1 or args.reset > args.measures:
+        parser.error('--reset must be between 1 and --measures')
 
     project = Path(__file__).resolve().parent.parent
     out = args.out_dir or project / 'out'
@@ -745,6 +441,16 @@ def main():
 
     video = out / (base + '.mp4')
 
+    if args.renderer == 'scroll':
+        from scroll import render_movie
+    else:
+        try:
+            from cursor import render_movie
+        except ImportError as exc:
+            raise RuntimeError(
+                'Cursor renderer is not installed yet: scripts/cursor.py'
+            ) from exc
+
     render_movie(
         preview,
         width,
@@ -756,7 +462,8 @@ def main():
         resolutions[args.resolution],
         args.measures,
         measure_starts,
-        args.chrome
+        args.chrome,
+        reset=args.reset
     )
 
     print(f'Wrote {video}', flush=True)
@@ -767,3 +474,4 @@ if __name__ == '__main__':
         main()
     except (ValueError, RuntimeError) as exc:
         sys.exit(f'Error: {exc}')
+
