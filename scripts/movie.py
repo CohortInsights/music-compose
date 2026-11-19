@@ -348,10 +348,6 @@ def main():
         help='Rendering mode (cursor requires scripts/cursor.py)'
     )
     parser.add_argument(
-        '--reset', type=int, default=4,
-        help='Measures between cursor resets (cursor renderer only)'
-    )
-    parser.add_argument(
         '--resolution',
         choices=['720p', '1080p', '2160p'],
         default='1080p'
@@ -368,9 +364,6 @@ def main():
 
     if args.measures <= 0 or args.fps <= 0 or args.padding < 0:
         parser.error('measures/fps must be positive and padding nonnegative')
-
-    if args.reset < 1 or args.reset > args.measures:
-        parser.error('--reset must be between 1 and --measures')
 
     project = Path(__file__).resolve().parent.parent
     out = args.out_dir or project / 'out'
@@ -462,8 +455,7 @@ def main():
         resolutions[args.resolution],
         args.measures,
         measure_starts,
-        args.chrome,
-        reset=args.reset
+        args.chrome
     )
 
     print(f'Wrote {video}', flush=True)
