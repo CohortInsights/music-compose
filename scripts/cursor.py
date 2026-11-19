@@ -1,7 +1,7 @@
-"""Stationary-system score renderer with a left-to-right moving cursor.
+"""Two-system score renderer with one-system vertical transitions.
 
-Each page contains `visible` consecutive measures. The score changes just
-after the last note onset of the preceding system.
+The active system occupies the upper row; the next system is visible below.
+At a transition, the two-row stack slides up one row.
 """
 
 import bisect
@@ -63,12 +63,14 @@ def render_movie(
         crop_left = max(0.0, left - opening_pad) if first else left
         pages.append((first, last, crop_left, right))
 
+    # Each system gets its own fixed row. Keep the same scale throughout.
+    row_h = out_h // 2
     scale = min(
         usable_width / max(right - left for _, _, left, right in pages),
-        (out_h * 0.90) / height,
+        (row_h * 0.80) / height,
     )
     image_h = max(1, math.ceil(height * scale))
-    top = (out_h - image_h) // 2
+    row_inset = (row_h - image_h) // 2
 
     # Each page is a cropped SVG view of the original assembled strip.
     # Rasterizing pages separately avoids Chrome's 16000-pixel strip limit.
@@ -136,6 +138,9 @@ def render_movie(
     ]
     completed = 0
     previous_page = -1
+    # Scroll the stack over this interval. The first frame of the new
+    # system starts the transition, keeping the next notation visible.
+    scroll_seconds = 0.30
 
     with tempfile.TemporaryFile(mode='w+b') as error_file:
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=error_file)
@@ -176,19 +181,46 @@ def render_movie(
                 x = min(max(x, measure_starts[first]), right)
                 cursor_x = round(margin + (x - left) * scale)
 
+                # The incoming system has been visible in the lower row.
+                # Animate it upward, preserving its appearance and scale.
+                transition_start = page_start_times[page]
+                if page > 0 and t < transition_start + scroll_seconds:
+                    u = max(0.0, min(1.0, (t - transition_start) / scroll_seconds))
+                    # Smoothstep eases the vertical motion at both ends.
+                    u = u * u * (3.0 - 2.0 * u)
+                    shift = round(row_h * (1.0 - u))
+                else:
+                    shift = 0
+
                 canvas = Image.new('RGB', (out_w, out_h), 'white')
-                score = raster_pages[page]
-                canvas.paste(
-                    score, (margin, top),
-                    score if score.mode == 'RGBA' else None,
-                )
+                # Previous row is retained during the slide; active and
+                # upcoming systems remain visually continuous.
+                for index in (page - 1, page, page + 1):
+                    if index < 0 or index >= page_count:
+                        continue
+                    if index == page - 1:
+                        y = row_inset + shift - row_h
+                    elif index == page:
+                        y = row_inset + shift
+                    else:
+                        y = row_inset + shift + row_h
+                    score = raster_pages[index]
+                    if y >= out_h or y + score.height <= 0:
+                        continue
+                    # PIL clips pasted images to the canvas bounds.
+                    canvas.paste(
+                        score, (margin, y),
+                        score if score.mode == 'RGBA' else None,
+                    )
+
+                cursor_y = row_inset + shift
                 draw = ImageDraw.Draw(canvas, 'RGBA')
                 draw.rectangle(
-                    (cursor_x - 9, top, cursor_x + 9, top + image_h),
+                    (cursor_x - 9, cursor_y, cursor_x + 9, cursor_y + image_h),
                     fill=(70, 115, 190, 18),
                 )
                 draw.line(
-                    (cursor_x, top, cursor_x, top + image_h),
+                    (cursor_x, cursor_y, cursor_x, cursor_y + image_h),
                     fill=(65, 95, 140, 150), width=1,
                 )
                 process.stdin.write(canvas.tobytes())
