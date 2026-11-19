@@ -19,6 +19,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from scipy.interpolate import PchipInterpolator
+from scipy.interpolate import CubicHermiteSpline
 
 SVG_NS = 'http://www.w3.org/2000/svg'
 ET.register_namespace('', SVG_NS)
@@ -403,54 +404,60 @@ def rasterize_chrome(svg_path, image_w, image_h, chrome=None):
 
 
 
+def render_movie(
+    strip_path,
+    width,
+    height,
+    xs,
+    times,
+    output,
+    fps,
+    resolution,
+    visible,
+    measure_starts,
+    chrome=None,
+):
+    import bisect
+    import math
+    import shutil
+    import subprocess
+    import tempfile
+    import time
 
-def render_movie(strip_path, width, height, xs, times, output, fps, resolution,
-                 visible, measure_starts, chrome=None):
     from PIL import Image, ImageDraw
 
     if not shutil.which('ffmpeg'):
-        raise RuntimeError('ffmpeg executable not found on PATH')
-    if not xs:
-        raise ValueError('No synchronized scroll events')
-    if len(xs) != len(times):
-        raise ValueError('Scroll positions and times must have equal lengths')
+        raise RuntimeError('ffmpeg not found')
+
+    if not xs or len(xs) != len(times):
+        raise ValueError('Invalid scroll synchronization points')
+
+    if len(xs) < 2:
+        raise ValueError('At least two synchronization points required')
+
+    if any(times[i] <= times[i - 1] for i in range(1, len(times))):
+        raise ValueError('Scroll times must be strictly increasing')
+
     if visible <= 0:
         raise ValueError('Visible measures must be positive')
+
     if not measure_starts:
-        raise ValueError('No measure boundaries')
-
-    # ------------------------------------------------------------
-    # Smooth monotonic interpolation of score position
-    # ------------------------------------------------------------
-
-    if len(times) < 2:
-        raise ValueError('At least two scroll events required')
-
-    if any(t2 <= t1 for t1, t2 in zip(times, times[1:])):
-        raise ValueError('Scroll event times must be strictly increasing')
-
-    if any(x2 < x1 for x1, x2 in zip(xs, xs[1:])):
-        raise ValueError('Scroll positions must not move backward')
-
-    scroll = PchipInterpolator(times, xs, extrapolate=False)
+        raise ValueError('No measure positions provided')
 
     out_w, out_h = resolution
 
-    # Calculate the width of the requested number of measures.
-    # Include the end of the last requested measure.
     count = min(visible, len(measure_starts))
     end_x = (
         measure_starts[count]
         if count < len(measure_starts)
         else width
     )
+
     visible_width = end_x - measure_starts[0]
 
     if visible_width <= 0:
-        raise ValueError('Invalid measure widths')
+        raise ValueError('Invalid visible measure width')
 
-    # Scale the score so the requested number of measures
-    # occupies the available horizontal display.
     scale = out_w / visible_width
 
     image_w = max(1, math.ceil(width * scale))
@@ -462,16 +469,31 @@ def render_movie(strip_path, width, height, xs, times, output, fps, resolution,
         flush=True
     )
 
-    print('Rendering SVG with Chrome...', flush=True)
-    score = rasterize_chrome(strip_path, image_w, image_h, chrome)
-    print('Rendering movie...', flush=True)
+    # Rasterize the complete score once.
+    score = rasterize_chrome(
+        strip_path,
+        image_w,
+        image_h,
+        chrome
+    )
 
-    guide = round(out_w * .25)
+    guide = round(out_w * 0.25)
     top = (out_h - image_h) // 2
+
     duration = times[-1] + 2.0
+    total_frames = math.ceil(duration * fps)
+
+    print(
+        f'Video: {out_w}x{out_h} at {fps} fps\n'
+        f'Score raster: {score.width}x{score.height}\n'
+        f'Total frames: {total_frames}',
+        flush=True
+    )
 
     command = [
-        'ffmpeg', '-y',
+        'ffmpeg',
+        '-y',
+        '-loglevel', 'error',
         '-f', 'rawvideo',
         '-pix_fmt', 'rgb24',
         '-s', f'{out_w}x{out_h}',
@@ -484,74 +506,143 @@ def render_movie(strip_path, width, height, xs, times, output, fps, resolution,
         str(output)
     ]
 
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-
     completed = 0
     total_measures = len(measure_starts)
 
-    try:
-        for frame in range(math.ceil(duration * fps)):
-            t = frame / fps
+    with tempfile.TemporaryFile(mode='w+b') as error_file:
 
-            # PCHIP passes exactly through every synchronization
-            # point, with continuous velocity between points.
-            # Hold position before the first and after the last.
-            if t <= times[0]:
-                x = float(xs[0])
-            elif t >= times[-1]:
-                x = float(xs[-1])
-            else:
-                x = float(scroll(t))
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stderr=error_file
+        )
 
-            canvas = Image.new('RGB', (out_w, out_h), 'white')
-            canvas.paste(
-                score,
-                (round(guide - x * scale), top),
-                score
-            )
+        render_start = time.monotonic()
 
-            draw = ImageDraw.Draw(canvas, 'RGBA')
-            draw.rectangle(
-                (guide - 9, top, guide + 9, top + image_h),
-                fill=(70, 115, 190, 18)
-            )
-            draw.line(
-                (guide, top, guide, top + image_h),
-                fill=(65, 95, 140, 150),
-                width=1
-            )
+        try:
+            for frame in range(total_frames):
+                t = frame / fps
 
-            process.stdin.write(canvas.tobytes())
+                # Original piecewise-linear interpolation.
+                idx = bisect.bisect_right(times, t) - 1
 
-            # Report measures as their right boundaries pass the guide.
-            while (
-                completed + 1 < total_measures
-                and x >= measure_starts[completed + 1]
-            ):
-                completed += 1
-                print(
-                    f'Measure {completed}/{total_measures} submitted',
-                    flush=True
+                if idx < 0:
+                    x = xs[0]
+                elif idx >= len(times) - 1:
+                    x = xs[-1]
+                else:
+                    ratio = (
+                        (t - times[idx])
+                        / (times[idx + 1] - times[idx])
+                    )
+                    x = (
+                        xs[idx]
+                        + ratio * (xs[idx + 1] - xs[idx])
+                    )
+
+                # Fast integer-pixel positioning.
+                canvas = Image.new(
+                    'RGB',
+                    (out_w, out_h),
+                    'white'
                 )
 
-    except Exception:
-        process.kill()
-        raise
-    finally:
-        if process.stdin:
-            process.stdin.close()
+                canvas.paste(
+                    score,
+                    (round(guide - x * scale), top),
+                    score if score.mode == 'RGBA' else None
+                )
 
-    print('Finalizing MP4...', flush=True)
-    error = process.stderr.read().decode(errors='replace')
+                # Stationary reading guide.
+                draw = ImageDraw.Draw(canvas, 'RGBA')
 
-    if process.wait():
-        raise RuntimeError('ffmpeg failed:\n' + error[-3000:])
+                draw.rectangle(
+                    (
+                        guide - 9,
+                        top,
+                        guide + 9,
+                        top + image_h
+                    ),
+                    fill=(70, 115, 190, 18)
+                )
 
-    for measure in range(completed + 1, total_measures + 1):
+                draw.line(
+                    (
+                        guide,
+                        top,
+                        guide,
+                        top + image_h
+                    ),
+                    fill=(65, 95, 140, 150),
+                    width=1
+                )
+
+                process.stdin.write(canvas.tobytes())
+
+                # Musical measure progress.
+                while (
+                    completed + 1 < total_measures
+                    and x >= measure_starts[completed + 1]
+                ):
+                    completed += 1
+                    print(
+                        f'Measure {completed}/{total_measures} submitted',
+                        flush=True
+                    )
+
+                # Rendering clock every 300 frames.
+                if (frame + 1) % 300 == 0:
+                    elapsed = time.monotonic() - render_start
+                    rendered = frame + 1
+                    rate = rendered / elapsed
+                    remaining = (
+                        (total_frames - rendered) / rate
+                        if rate > 0 else 0
+                    )
+
+                    print(
+                        f'Frames {rendered}/{total_frames} '
+                        f'({100 * rendered / total_frames:.1f}%) | '
+                        f'Elapsed {elapsed / 60:.1f} min | '
+                        f'{rate:.1f} fps | '
+                        f'ETA {remaining / 60:.1f} min',
+                        flush=True
+                    )
+
+        except Exception:
+            process.kill()
+            process.wait()
+            raise
+
+        finally:
+            if process.stdin:
+                process.stdin.close()
+
+        print('Finalizing MP4...', flush=True)
+
+        return_code = process.wait()
+
+        if return_code:
+            error_file.seek(0)
+            error = error_file.read().decode(
+                errors='replace'
+            )
+            raise RuntimeError(
+                'ffmpeg failed:\n' + error[-3000:]
+            )
+
+    elapsed = time.monotonic() - render_start
+
+    print(
+        f'Rendering completed in {elapsed / 60:.2f} minutes '
+        f'({total_frames / elapsed:.1f} fps average)',
+        flush=True
+    )
+
+    for measure in range(
+        completed + 1,
+        total_measures + 1
+    ):
         print(
             f'Measure {measure}/{total_measures} submitted',
             flush=True
